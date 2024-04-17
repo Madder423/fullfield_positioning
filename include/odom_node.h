@@ -18,17 +18,6 @@
 #include <functional>
 #include <time.h>
 
-
-// 全场定位数据
-// typedef struct
-// {
-//     float vx;//x轴速度(m/s)
-//     float x;//x轴坐标(m)
-//     float vy;//y轴速度(m/x)
-//     float y;//y轴坐标(m)
-//     float vyaw;//偏航角速度(dps)
-//     float yaw;//偏航角(degree)
-// } fullFieldPositioning_data;
 typedef struct
 {
     geometry_msgs::msg::Vector3 footprint_pose;
@@ -37,26 +26,11 @@ typedef struct
     double vyaw;
 } fullFieldPositioning_data;
 
-// 四元数
-typedef struct
-{
-    float w;
-    float x;
-    float y;
-    float z;
-} quaternion_t;
-
 class OdometerPublisher : public rclcpp::Node
 {
 public:
     // 构造函数,有一个参数为节点名称
-    OdometerPublisher(std::string name,std::string agreement, std::string odom_frame = "odom", std::string base_frame = "base_link", std::string FFP_frame = "footprint");
-    //获取X_id数据
-    void getXdata(const std::shared_ptr<can_frame> &frame);
-    //获取Y_id轴数据
-    void getYdata(const std::shared_ptr<can_frame> &frame);
-    //获取Angle_id数据
-    void getYawData(const std::shared_ptr<can_frame> &frame);
+    OdometerPublisher(std::string name,const std::shared_ptr<Can> can, std::string odom_frame = "odom", std::string base_frame = "base_link", std::string FFP_frame = "footprint");
     //发布里程计消息
     void publish_msg();
     //发布坐标变换信息
@@ -64,31 +38,39 @@ public:
 private:
     // 声名定时器指针
     rclcpp::TimerBase::SharedPtr timer_;
-    //话题发布周期  默认15毫秒
-    unsigned int topic_posting_cycle;
-    //话题发布周期参数（默认15）
-    unsigned int timer_callback_period;
+    //can智能指针
+    std::shared_ptr<Can> _can;
     // 声明话题发布者
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_node;
+    // tf发布者
+    std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
     // 发布的里程计消息
     nav_msgs::msg::Odometry _odom;
-    //从全长定位获取的速度
-    fullFieldPositioning_data _fullFieldPositioning_data;
-    //四元数
-    quaternion_t _quaternion;
+    // 原始全场定位数据
+    fullFieldPositioning_data _data;
     //odom坐标系名称，默认odom
     std::string odom_frame;
     //base坐标系名称，默认base_link
     std::string base_frame;
     //全场定位坐标系名称，默认footprint
     std::string fullFieldPositioning_frame;
-    //全场定位协议,有TR,ER,目前主推ER
-    std::string agreement;
-
     //欧拉角生成四元数
     void Euler2Quaternion(float yaw, float roll=0, float pitch=0);
     //根据受到数据生成里程计消息
     void CreateOdomMsg();
+    // can回调
+    void getXData(const std::shared_ptr<can_frame> &frame){
+    _data.footprint_twist.x=(*(float*)frame->data);
+    _data.footprint_pose.x=(*(float*)(frame->data+4));
+}
+    void getYData(const std::shared_ptr<can_frame> &frame){
+    _data.footprint_twist.y=(*(float*)frame->data);
+    _data.footprint_pose.y=(*(float*)(frame->data+4));
+}
+    void getYawData(const std::shared_ptr<can_frame> &frame){
+    _data.vyaw=(*(float*)frame->data) * 0.01745329f  ;//系数用于角度转弧度
+    _data.yaw=(*(float*)(frame->data+4)) * 0.01745329f ;
+}
 };
 
 #endif //__ODOM_NODE_H
